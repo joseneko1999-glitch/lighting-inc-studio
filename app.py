@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import os, torch, cv2, numpy as np
 from PIL import Image
