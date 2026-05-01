@@ -55,7 +55,7 @@ with st.sidebar:
             fill_color="rgba(255, 255, 255, 1.0)",
             stroke_width=15,
             stroke_color="rgba(255, 255, 255, 1.0)",
-            background_image=Image.open(io.BytesIO(base64.b64decode(bg_img_data.split(",")[1]))),
+            background_image=pil_room_src,  # Streamlit 1.40 handles this correctly
             update_streamlit=True,
             height=c_height,
             width=c_width,
