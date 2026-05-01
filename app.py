@@ -17,9 +17,12 @@ def get_canvas_bg(pil_img):
 
 @st.cache_resource
 def load_model():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = torch.hub.load("isl-org/ZoeDepth", "ZoeD_N", pretrained=True, trust_repo=True)
-    return model.to(device).eval()
+    # Switching to MiDaS 'Small' - much faster and cloud-friendly
+    model_type = "MiDaS_small" 
+    model = torch.hub.load("intel-isl/MiDaS", model_type)
+    device = torch.device("cpu") # Keep it on CPU for cloud stability
+    model.to(device).eval()
+    return model, torch.hub.load("intel-isl/MiDaS", "transforms").small_transform
 
 def get_natural_kelvin(warmth_val):
     if warmth_val > 0.5:
