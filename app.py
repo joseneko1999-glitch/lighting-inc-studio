@@ -8,12 +8,12 @@ import base64
 st.set_page_config(page_title="Lighting Inc. Studio", layout="wide")
 st.title("💡 Lighting Inc. | Virtual Studio")
 
-# Helper to fix the "image_to_url" error on Streamlit Cloud
-def get_image_base64(pil_img):
+# This converts the image to a format the Canvas can read without crashing
+def get_canvas_bg(pil_img):
     buffered = io.BytesIO()
-    pil_img.save(buffered, format="JPEG")
+    pil_img.save(buffered, format="PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
-    return f"data:image/jpeg;base64,{img_str}"
+    return f"data:image/png;base64,{img_str}"
 
 @st.cache_resource
 def load_model():
@@ -36,6 +36,9 @@ with st.sidebar:
 
     st.divider()
     
+    # We initialize canvas_result as None so the rest of the code doesn't break
+    canvas_result = None
+    
     if uploaded_room:
         st.header("🧹 2. Object Cleanup")
         st.markdown("Paint over old fixtures:")
@@ -45,14 +48,14 @@ with st.sidebar:
         c_height = 300
         c_width = int((c_height / h_src) * w_src)
 
-        # Use the Base64 string instead of the raw image object
-        bg_data = get_image_base64(pil_room_src)
+        # FIX: We pass the Base64 string directly to the canvas
+        bg_img_data = get_canvas_bg(pil_room_src)
 
         canvas_result = st_canvas(
             fill_color="rgba(255, 255, 255, 1.0)",
             stroke_width=15,
             stroke_color="rgba(255, 255, 255, 1.0)",
-            background_image=pil_room_src, # Streamlit sometimes handles this better in newer versions
+            background_image=Image.open(io.BytesIO(base64.b64decode(bg_img_data.split(",")[1]))),
             update_streamlit=True,
             height=c_height,
             width=c_width,
@@ -79,8 +82,8 @@ if uploaded_room and uploaded_lamp:
     h, w = room_img.shape[:2]
     ax, ay = int((x_pos/1000)*w), int((y_pos/1000)*h)
 
-    # Apply cleanup mask if user painted
-    if canvas_result.image_data is not None:
+    # Apply cleanup mask
+    if canvas_result is not None and canvas_result.image_data is not None:
         mask = canvas_result.image_data[:, :, 3] 
         if np.any(mask > 0):
             mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
