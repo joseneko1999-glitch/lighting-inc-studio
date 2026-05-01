@@ -98,7 +98,9 @@ if uploaded_room and uploaded_lamp:
         with st.spinner("Calculating 3D Depth..."):
             model = load_model()
             pil_depth = Image.open(io.BytesIO(room_bytes)).convert("RGB")
-            with torch.no_grad(): depth = model.infer_pil(pil_depth)
+            with torch.no_grad():
+    prediction = model(input_batch)
+    # ... (the rest of the transformation logic)
             import matplotlib.pyplot as plt
             plt.imsave(d_name, depth, cmap="magma")
     
