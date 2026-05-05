@@ -36,19 +36,28 @@ with st.sidebar:
     if uploaded_room:
         st.header("🧹 2. Object Cleanup")
         pil_room_src = Image.open(uploaded_room).convert("RGB")
+        
+        # This converts the image to a format the canvas can't ignore
+        buffered = io.BytesIO()
+        pil_room_src.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        bg_data = f"data:image/png;base64,{img_str}"
+
         w_src, h_src = pil_room_src.size
         c_height = 300
         c_width = int((c_height / h_src) * w_src)
+        
         canvas_result = st_canvas(
             fill_color="rgba(255, 255, 255, 1.0)",
             stroke_width=15,
             stroke_color="rgba(255, 255, 255, 1.0)",
-            background_image=pil_room_src,
+            background_image=Image.open(io.BytesIO(base64.b64decode(img_str))), # Direct load
             update_streamlit=True,
             height=c_height,
             width=c_width,
             drawing_mode="freedraw",
             key="cleanup_canvas",
+        )
         )
     
     st.divider()
