@@ -10,7 +10,6 @@ st.title("💡 Lighting Inc. | Virtual Studio")
 
 @st.cache_resource
 def load_model():
-    # Using 'Small' version to stay under the 1GB RAM limit on Streamlit Cloud
     model_type = "MiDaS_small"
     midas = torch.hub.load("intel-isl/MiDaS", model_type)
     device = torch.device("cpu")
@@ -40,22 +39,27 @@ with st.sidebar:
         
         pil_room_src = Image.open(uploaded_room).convert("RGB")
         
-        # Convert to Base64 to bypass URL errors in Streamlit Cloud
+        # Convert to Base64 to force the image to show
         buffered = io.BytesIO()
         pil_room_src.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
+        bg_data = f"data:image/png;base64,{img_str}"
         
         w_src, h_src = pil_room_src.size
         c_height = 300
         c_width = int((c_height / h_src) * w_src)
-        
-        bg_image_ready = Image.open(io.BytesIO(base64.b64decode(img_str)))
+
+        # --- THE BYPASS: Injecting the image via CSS ---
+        st.markdown(
+            f'<style>div[data-testid="stCanvas"] {{ background-image: url({bg_data}); background-size: contain; background-repeat: no-repeat; }}</style>',
+            unsafe_allow_html=True
+        )
 
         canvas_result = st_canvas(
             fill_color="rgba(255, 255, 255, 1.0)",
-            stroke_width=15,
+            stroke_width=20,
             stroke_color="rgba(255, 255, 255, 1.0)",
-            background_image=bg_image_ready,
+            background_color="rgba(0,0,0,0)", # Transparent so CSS image shows through
             update_streamlit=True,
             height=c_height,
             width=c_width,
@@ -73,24 +77,23 @@ with st.sidebar:
 
 # --- MAIN ENGINE ---
 if uploaded_room and uploaded_lamp:
-    # 1. Image Prep
     room_bytes = uploaded_room.getvalue()
     room_img = cv2.imdecode(np.frombuffer(room_bytes, np.uint8), cv2.IMREAD_COLOR)
     lamp_img = cv2.imdecode(np.frombuffer(uploaded_lamp.getvalue(), np.uint8), cv2.IMREAD_UNCHANGED)
     h, w = room_img.shape[:2]
     ax, ay = int((x_pos/1000)*w), int((y_pos/1000)*h)
 
-    # 2. Cleanup Old Fixture using Canvas Mask
+    # Apply Cleanup
     if canvas_result is not None and canvas_result.image_data is not None:
         mask = canvas_result.image_data[:, :, 3] 
         if np.any(mask > 0):
             mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
             room_img[mask_resized > 0] = [255, 255, 255] 
 
-    # 3. Depth Analysis (MiDaS)
+    # Depth
     d_path = f"depth_{uploaded_room.name}.png"
     if not os.path.exists(d_path):
-        with st.spinner("Creating 3D Map..."):
+        with st.spinner("Analyzing 3D Depth..."):
             midas, transform = load_model()
             input_batch = transform(np.array(pil_room_src)).to("cpu")
             with torch.no_grad():
@@ -105,7 +108,7 @@ if uploaded_room and uploaded_lamp:
     
     depth_map = cv2.imread(d_path, cv2.IMREAD_GRAYSCALE)
 
-    # 4. Lighting Logic
+    # Lighting
     color_tint = get_natural_kelvin(warmth)
     target_d = depth_map[min(ay, h-1), min(ax, w-1)]
     glow = np.zeros((h, w), dtype=np.float32)
@@ -116,7 +119,7 @@ if uploaded_room and uploaded_lamp:
     tinted_glow = cv2.merge([final_mask * color_tint[0], final_mask * color_tint[1], final_mask * color_tint[2]])
     room_lit = np.clip(room_img.astype(np.float32) + tinted_glow, 0, 255).astype(np.uint8)
 
-    # 5. Product Overlay
+    # Overlay
     hl, wl = int(lamp_img.shape[0]*scale), int(lamp_img.shape[1]*scale)
     if hl > 0 and wl > 0:
         lamp_r = cv2.resize(lamp_img, (wl, hl))
@@ -128,10 +131,10 @@ if uploaded_room and uploaded_lamp:
 
     st.image(cv2.cvtColor(room_lit, cv2.COLOR_BGR2RGB), use_column_width=True)
     
-    # 6. Export
+    # Export
     res_pil = Image.fromarray(cv2.cvtColor(room_lit, cv2.COLOR_BGR2RGB))
     buf = io.BytesIO()
     res_pil.save(buf, format="PNG")
     st.download_button("📸 Download Staged Photo", buf.getvalue(), f"Staged_{uploaded_room.name}", "image/png")
 else:
-    st.info("Please upload your assets in the sidebar.")
+    st.info("Upload room and product photos in the sidebar.")
