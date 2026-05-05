@@ -10,7 +10,7 @@ st.title("💡 Lighting Inc. | Virtual Studio")
 
 @st.cache_resource
 def load_model():
-    # Using the 'Small' version to stay under the 1GB RAM limit
+    # Using 'Small' version to stay under the 1GB RAM limit on Streamlit Cloud
     model_type = "MiDaS_small"
     midas = torch.hub.load("intel-isl/MiDaS", model_type)
     device = torch.device("cpu")
@@ -33,31 +33,34 @@ with st.sidebar:
 
     st.divider()
     canvas_result = None
+    
     if uploaded_room:
         st.header("🧹 2. Object Cleanup")
+        st.markdown("Paint over old fixtures:")
+        
         pil_room_src = Image.open(uploaded_room).convert("RGB")
         
-        # This converts the image to a format the canvas can't ignore
+        # Convert to Base64 to bypass URL errors in Streamlit Cloud
         buffered = io.BytesIO()
         pil_room_src.save(buffered, format="PNG")
         img_str = base64.b64encode(buffered.getvalue()).decode()
-        bg_data = f"data:image/png;base64,{img_str}"
-
+        
         w_src, h_src = pil_room_src.size
         c_height = 300
         c_width = int((c_height / h_src) * w_src)
         
+        bg_image_ready = Image.open(io.BytesIO(base64.b64decode(img_str)))
+
         canvas_result = st_canvas(
             fill_color="rgba(255, 255, 255, 1.0)",
             stroke_width=15,
             stroke_color="rgba(255, 255, 255, 1.0)",
-            background_image=Image.open(io.BytesIO(base64.b64decode(img_str))), # Direct load
+            background_image=bg_image_ready,
             update_streamlit=True,
             height=c_height,
             width=c_width,
             drawing_mode="freedraw",
-            key="cleanup_canvas",
-        )
+            key="cleanup_canvas"
         )
     
     st.divider()
@@ -77,14 +80,14 @@ if uploaded_room and uploaded_lamp:
     h, w = room_img.shape[:2]
     ax, ay = int((x_pos/1000)*w), int((y_pos/1000)*h)
 
-    # 2. Cleanup Old Fixture
+    # 2. Cleanup Old Fixture using Canvas Mask
     if canvas_result is not None and canvas_result.image_data is not None:
         mask = canvas_result.image_data[:, :, 3] 
         if np.any(mask > 0):
             mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
             room_img[mask_resized > 0] = [255, 255, 255] 
 
-    # 3. Fast Depth Analysis (MiDaS)
+    # 3. Depth Analysis (MiDaS)
     d_path = f"depth_{uploaded_room.name}.png"
     if not os.path.exists(d_path):
         with st.spinner("Creating 3D Map..."):
@@ -96,9 +99,7 @@ if uploaded_room and uploaded_lamp:
                     prediction.unsqueeze(1), size=(h, w), mode="bicubic", align_corners=False
                 ).squeeze()
             depth_map = prediction.cpu().numpy()
-            # Normalize for visualization
-            depth_min = depth_map.min()
-            depth_max = depth_map.max()
+            depth_min, depth_max = depth_map.min(), depth_map.max()
             depth_norm = (255 * (depth_map - depth_min) / (depth_max - depth_min)).astype(np.uint8)
             cv2.imwrite(d_path, depth_norm)
     
@@ -110,7 +111,6 @@ if uploaded_room and uploaded_lamp:
     glow = np.zeros((h, w), dtype=np.float32)
     cv2.circle(glow, (ax, ay), 350, 1, -1)
     glow = cv2.GaussianBlur(glow, (151, 151), 0)
-    # Lighting falloff based on 3D depth
     depth_inf = np.clip(1.0 - (np.abs(depth_map.astype(np.float32) - target_d) / 50.0), 0, 1)
     final_mask = (glow * depth_inf * bright)
     tinted_glow = cv2.merge([final_mask * color_tint[0], final_mask * color_tint[1], final_mask * color_tint[2]])
@@ -134,4 +134,4 @@ if uploaded_room and uploaded_lamp:
     res_pil.save(buf, format="PNG")
     st.download_button("📸 Download Staged Photo", buf.getvalue(), f"Staged_{uploaded_room.name}", "image/png")
 else:
-    st.info("Upload room and product photos in the sidebar.")
+    st.info("Please upload your assets in the sidebar.")
